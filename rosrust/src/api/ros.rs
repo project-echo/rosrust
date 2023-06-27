@@ -390,7 +390,7 @@ impl Ros {
         // TODO colorise without allocation
         macro_rules! format_string {
             ($prefix:expr, $color:expr) => {
-            format_args!("[{} @ {}:{}]: {}", $prefix, file, line, msg)
+                format_args!("[{} @ {}:{}]: {}", $prefix, file, line, msg)
             };
         }
 
@@ -408,7 +408,6 @@ impl Ros {
         self.log_to_terminal(level, &msg, file, line);
         let maybe_logger = self.logger.lock().unwrap();
         if let Some(logger) = maybe_logger.deref() {
-
             let topics = self.slave.publications.get_topic_names();
             let message = Log {
                 header: Header::default(),
