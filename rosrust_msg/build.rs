@@ -5,7 +5,6 @@ use std::{env, fs};
 fn main() {
     let out_dir = env::var("OUT_DIR").unwrap();
 
-    rerun_if_env_changed("OUT_DIR");
     rerun_if_env_changed("CMAKE_PREFIX_PATH");
     rerun_if_env_changed("ROS_PACKAGE_PATH");
     rerun_if_env_changed("ROSRUST_MSG_PATH");
