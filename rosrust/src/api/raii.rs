@@ -8,7 +8,7 @@ use crate::rosxmlrpc::Response;
 use crate::tcpros::{Message, PublisherStream, ServicePair, ServiceResult};
 use crate::{RawMessageDescription, SubscriptionHandler};
 use log::error;
-use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::{AtomicBool, AtomicUsize};
 use std::sync::Arc;
 
 #[derive(Clone)]
@@ -144,13 +144,15 @@ impl Subscriber {
         T: Message,
         H: SubscriptionHandler<T>,
     {
-        let id = slave.add_subscription::<T, H>(name, queue_size, handler)?;
+        let unsub_signal = Arc::new(AtomicBool::new(false));
+        let id = slave.add_subscription::<T, H>(name, queue_size, handler, unsub_signal.clone())?;
 
         let info = Arc::new(InteractorRaii::new(SubscriberInfo {
             master,
             slave,
             name: name.into(),
             id,
+            unsub_signal,
         }));
 
         let publishers = info
@@ -194,10 +196,13 @@ struct SubscriberInfo {
     slave: Arc<Slave>,
     name: String,
     id: usize,
+    unsub_signal: Arc<AtomicBool>,
 }
 
 impl Interactor for SubscriberInfo {
     fn unregister(&mut self) -> Response<()> {
+        self.unsub_signal.store(true, std::sync::atomic::Ordering::Relaxed);
+
         self.slave.remove_subscription(&self.name, self.id);
         self.master.unregister_subscriber(&self.name).map(|_| ())
     }

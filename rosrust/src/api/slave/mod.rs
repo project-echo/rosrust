@@ -14,6 +14,7 @@ use error_chain::bail;
 use log::error;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 
 pub struct Slave {
@@ -156,13 +157,14 @@ impl Slave {
         topic: &str,
         queue_size: usize,
         handler: H,
+        unsub_signal: Arc<AtomicBool>,
     ) -> Result<usize>
     where
         T: Message,
         H: SubscriptionHandler<T>,
     {
         self.subscriptions
-            .add(&self.name, topic, queue_size, handler)
+            .add(&self.name, topic, queue_size, handler, unsub_signal)
     }
 
     #[inline]

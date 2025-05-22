@@ -11,6 +11,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::net::{SocketAddr, TcpStream, ToSocketAddrs};
 use std::sync::Arc;
 use std::thread;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 enum DataStreamConnectionChange {
     Connect(
@@ -37,6 +38,7 @@ impl SubscriberRosConnection {
         msg_definition: String,
         msg_type: String,
         md5sum: String,
+        unsub_signal: Arc<AtomicBool>,
     ) -> SubscriberRosConnection {
         let subscriber_connection_queue_size = 8;
         let (data_stream_tx, data_stream_rx) = bounded(subscriber_connection_queue_size);
@@ -56,6 +58,7 @@ impl SubscriberRosConnection {
                     &msg_definition,
                     &md5sum,
                     &msg_type,
+                    unsub_signal,
                 )
             }
         });
@@ -203,6 +206,7 @@ fn join_connections(
     msg_definition: &str,
     md5sum: &str,
     msg_type: &str,
+    unsub_signal: Arc<AtomicBool>,
 ) {
     type Sub = (LossySender<MessageInfo>, Sender<HashMap<String, String>>);
     let mut subs: BTreeMap<usize, Sub> = BTreeMap::new();
@@ -255,6 +259,7 @@ fn join_connections(
                             msg_definition,
                             md5sum,
                             msg_type,
+                            unsub_signal.clone(),
                         )
                         .chain_err(|| ErrorKind::TopicConnectionFail(topic.into()));
                         match result {
@@ -290,8 +295,11 @@ fn join_connection(
     msg_definition: &str,
     md5sum: &str,
     msg_type: &str,
+    unsub_signal: Arc<AtomicBool>,
 ) -> Result<HashMap<String, String>> {
     let mut stream = TcpStream::connect(publisher)?;
+    stream.set_read_timeout(Some(std::time::Duration::from_secs(10)))?;
+
     let headers = exchange_headers::<_>(
         &mut stream,
         caller_id,
@@ -302,15 +310,29 @@ fn join_connection(
     )?;
     let pub_caller_id = headers.get("callerid").cloned();
     let target = data_stream.clone();
+
     thread::spawn(move || {
         let pub_caller_id = Arc::new(pub_caller_id.unwrap_or_default());
-        while let Ok(buffer) = package_to_vector(&mut stream) {
-            if let Err(TrySendError::Disconnected(_)) =
-                target.try_send(MessageInfo::new(Arc::clone(&pub_caller_id), buffer))
-            {
-                // Data receiver has been destroyed after
-                // Subscriber destructor's kill signal
-                break;
+        loop {
+            match package_to_vector(&mut stream) {
+                Ok(buffer) => {
+                    if let Err(TrySendError::Disconnected(_)) = target.try_send(MessageInfo::new(Arc::clone(&pub_caller_id), buffer))
+                    {
+                        // Data receiver has been destroyed after
+                        // Subscriber destructor's kill signal
+                        break;
+                    }
+                }
+
+                Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {
+                    if unsub_signal.load(Ordering::Relaxed) {
+                        // SubscriberInfo has been dropped, so break out of here to close the
+                        // socket and exit the thread
+                        break;
+                    }
+                }
+
+                Err(_) => break,
             }
         }
     });

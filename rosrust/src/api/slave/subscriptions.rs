@@ -7,6 +7,7 @@ use log::error;
 use std::collections::{BTreeSet, HashMap};
 use std::iter::FromIterator;
 use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 #[derive(Clone, Default)]
 pub struct SubscriptionsTracker {
@@ -51,7 +52,7 @@ impl SubscriptionsTracker {
             .collect()
     }
 
-    pub fn add<T, H>(&self, name: &str, topic: &str, queue_size: usize, handler: H) -> Result<usize>
+    pub fn add<T, H>(&self, name: &str, topic: &str, queue_size: usize, handler: H, unsub_signal: Arc<AtomicBool>) -> Result<usize>
     where
         T: Message,
         H: SubscriptionHandler<T>,
@@ -67,6 +68,7 @@ impl SubscriptionsTracker {
                 msg_definition,
                 msg_type.clone(),
                 md5sum.clone(),
+                unsub_signal,
             )
         });
         let connection_topic = connection.get_topic();
