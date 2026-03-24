@@ -21,7 +21,7 @@ jobs:
       ROS_DISTRO: noetic
     steps:
       - name: rosrust
-        uses: actions/checkout@v1
+        uses: actions/checkout@50fbc622fc4ef5163becd7fab6573eac35f8462e # v1
       - name: Install latest rust
         run: |
             curl --proto '=https' --tlsv1.2 https://sh.rustup.rs -sSf | sh -s -- -y
